@@ -142,7 +142,7 @@ else:
     
     
 net = encoderEMP(arch = args.arch)
-net = nn.DataParallel(net)
+# net = nn.DataParallel(net)
 net.to(device)
 
 
