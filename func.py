@@ -46,7 +46,7 @@ class WeightedKNNClassifier(Metric):
                 step. Defaults to False.
         """
 
-        super().__init__(dist_sync_on_step=dist_sync_on_step, compute_on_step=False)
+        super().__init__(dist_sync_on_step=dist_sync_on_step)#, compute_on_step=False)
 
         self.k = k
         self.T = T

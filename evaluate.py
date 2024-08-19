@@ -4,7 +4,7 @@
 import argparse
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from model.model import encoder
+from model.model import encoderEMP, encoderSimSiam
 from dataset.datasets import load_dataset
 import numpy as np
 import torch.nn.functional as F
@@ -35,21 +35,15 @@ parser.add_argument('--knn', help='evaluate using kNN measuring cosine similarit
 parser.add_argument('--model_path', type=str, default="",
                     help='model directory for eval')
 
+parser.add_argument('--model', help="model name for recovering encoder ('emp' or 'simsiam')")
+
+parser.add_argument('--probing_tr_augs', help='apply augmentations for samples used to train the probe', action='store_true')
+
+parser.add_argument('--probing_ts_augs', help='apply augmentations for samples used to test the probe', action='store_true')
+
+
             
 args = parser.parse_args()
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ######################
@@ -83,7 +77,7 @@ def test(net, train_loader, test_loader):
 
             x = torch.cat(x, dim = 0)
             
-            z_proj, z_pre = net(x, is_test=True)
+            z_proj, z_pre = net(x)
 
             z_pre = chunk_avg(z_pre, test_patches)
             z_pre = z_pre.detach().cpu()
@@ -99,7 +93,7 @@ def test(net, train_loader, test_loader):
         for x, y in tqdm(test_loader):
             x = torch.cat(x, dim = 0)
             
-            z_proj, z_pre = net(x, is_test=True)
+            z_proj, z_pre = net(x)
 
             z_pre = chunk_avg(z_pre, test_patches)
             z_pre = z_pre.detach().cpu()
@@ -148,25 +142,37 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 #Get Dataset
 if args.data == "imagenet100" or args.data == "imagenet":
         
-    memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches)
+    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches, model=args.model, use_probing_tr_augs=args.probing_tr_augs)
     memory_loader = DataLoader(memory_dataset, batch_size=50, shuffle=True, drop_last=True,num_workers=8)
 
-    test_data = load_dataset(args.data, train=False, num_patch = test_patches)
+    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches, model=args.model, use_probing_ts_augs=args.probing_ts_augs)
     test_loader = DataLoader(test_data, batch_size=50, shuffle=True, num_workers=8)
 
 else:
-    memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches)
+    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches, use_probing_tr_augs=args.probing_tr_augs)
+    # Get a random subset of length 2000 of memory dataset
+    # subset_memory_indices = torch.randperm(len(memory_dataset))[:2000]
+    # memory_dataset = torch.utils.data.Subset(memory_dataset, subset_memory_indices)
     memory_loader = DataLoader(memory_dataset, batch_size=50, shuffle=True, drop_last=True,num_workers=8)
 
-    test_data = load_dataset(args.data, train=False, num_patch = test_patches)
+    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches, use_probing_ts_augs=args.probing_ts_augs)
     test_loader = DataLoader(test_data, batch_size=50, shuffle=True, num_workers=8)
 
 # Load Model and Checkpoint
 use_cuda = True
 device = torch.device("cuda" if use_cuda else "cpu")
+
+if args.model == "emp":
+    encoder = encoderEMP
+elif args.model == "simsiam":
+    encoder = encoderSimSiam
+else:
+    raise ValueError(f'Unrecognized model name "{args.model}"')
 net = encoder(arch = args.arch)
 net = nn.DataParallel(net)
 save_dict = torch.load(args.model_path)
+if 'net' in save_dict.keys():
+    save_dict = save_dict['net']
 net.load_state_dict(save_dict,strict=False)
 net.cuda()
 net.eval()

@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import os
 from torch.utils.data import DataLoader
-from model.model import encoderEMP
+from model.model import encoderSimSiam
 from dataset.datasets import load_dataset
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,12 +28,6 @@ from torch.cuda.amp import GradScaler, autocast
 import argparse
 parser = argparse.ArgumentParser(description='Unsupervised Learning')
 
-parser.add_argument('--patch_sim', type=int, default=200,
-                    help='coefficient of cosine similarity (default: 200)')
-parser.add_argument('--tcr', type=int, default=1,
-                    help='coefficient of tcr (default: 1)')
-parser.add_argument('--num_patches', type=int, default=100,
-                    help='number of patches used in EMP-SSL (default: 100)')
 parser.add_argument('--arch', type=str, default="resnet18-cifar",
                     help='network architecture (default: resnet18-cifar)')
 parser.add_argument('--bs', type=int, default=100,
@@ -44,7 +38,7 @@ parser.add_argument('--eps', type=float, default=0.2,
                     help='eps for TCR (default: 0.2)') 
 parser.add_argument('--msg', type=str, default="NONE",
                     help='additional message for description (default: NONE)')     
-parser.add_argument('--dir', type=str, default="EMP-SSL-Training",
+parser.add_argument('--dir', type=str, default="SimSiam-Training",
                     help='directory name (default: EMP-SSL-Training)')     
 parser.add_argument('--data', type=str, default="cifar10",
                     help='data (default: cifar10)')          
@@ -53,21 +47,50 @@ parser.add_argument('--epoch', type=int, default=30,
 parser.add_argument('--num_exps', type=int, default=20,
                     help='number of CL experiences (default: 20)')
 
-parser.add_argument('--semantic_order', help='Use semantic ordering of targets based on coarse labels', action='store_true')
-
 args = parser.parse_args()
 
 print(args)
 
-num_patches = args.num_patches
-dir_name = f"./logs/{args.dir}/patchsim{args.patch_sim}_numpatch{args.num_patches}_bs{args.bs}_lr{args.lr}_numexps{args.num_exps}_{args.msg}"
+num_patches = 2
+dir_name = f"./logs/{args.dir}/bs{args.bs}_lr{args.lr}_{args.msg}"
 
-# Write args to config.txt file
-if not os.path.exists(dir_name):
-    os.makedirs(dir_name)
-    with open(f"{dir_name}/config.txt", "w") as f:
-        f.write(str(args))
 
+######################
+## Prepare Training ##
+######################
+torch.multiprocessing.set_sharing_strategy('file_system')
+
+if args.data == "imagenet100" or args.data == "imagenet":
+    exps_trainset, train_dataset = load_dataset("imagenet", num_exps=args.num_exps, train=True, num_patch = num_patches, model='simsiam')
+    dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
+
+else:
+    exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True, num_patch = num_patches, model='simsiam')
+    dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
+
+
+use_cuda = True
+device = torch.device("cuda" if use_cuda else "cpu")
+    
+    
+net = encoderSimSiam(arch = args.arch)
+net = nn.DataParallel(net)
+net.cuda()
+
+
+opt = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
+opt = LARSWrapper(opt,eta=0.005,clip=True,exclude_bias_n_norm=True,)
+
+scaler = GradScaler()
+if args.data == "imagenet-100":
+    num_converge = (150000//args.bs)*args.epoch
+else:
+    num_converge = (50000//args.bs)*args.epoch
+    
+# scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=num_converge, eta_min=0,last_epoch=-1)
+
+# Loss
+criterion = nn.CosineSimilarity(dim=1).cuda()
 
 
 #####################
@@ -83,78 +106,13 @@ def chunk_avg(x,n_chunks=2,normalize=False):
         return F.normalize(x.mean(0),dim=1)
 
 
-class Similarity_Loss(nn.Module):
-    def __init__(self, ):
-        super().__init__()
-        pass
-
-    def forward(self, z_list, z_avg):
-        z_sim = 0
-        num_patch = len(z_list)
-        z_list = torch.stack(list(z_list), dim=0)
-        z_avg = z_list.mean(dim=0)
-        
-        z_sim = 0
-        for i in range(num_patch):
-            z_sim += F.cosine_similarity(z_list[i], z_avg, dim=1).mean()
-            
-        z_sim = z_sim/num_patch
-        z_sim_out = z_sim.clone().detach()
-                
-        return -z_sim, z_sim_out
-    
-def cal_TCR(z, criterion, num_patches):
-    z_list = z.chunk(num_patches,dim=0)
-    loss = 0
-    for i in range(num_patches):
-        loss += criterion(z_list[i])
-    loss = loss/num_patches
-    return loss
-
-######################
-## Prepare Training ##
-######################
-torch.multiprocessing.set_sharing_strategy('file_system')
-
-if args.data == "imagenet100" or args.data == "imagenet":
-    exps_trainset, train_dataset = load_dataset("imagenet", num_exps=args.num_exps, train=True, num_patch = num_patches)
-    dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
-
-else:
-    exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True,
-                                                num_patch = num_patches, targets_semantic_order=args.semantic_order)
-    dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
-
-
-use_cuda = True
-device = torch.device("cuda" if use_cuda else "cpu")
-    
-    
-net = encoderEMP(arch = args.arch)
-net = nn.DataParallel(net)
-net.cuda()
-
-
-opt = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
-opt = LARSWrapper(opt,eta=0.005,clip=True,exclude_bias_n_norm=True,)
-
-# scaler = GradScaler()
-# if args.data == "imagenet-100":
-#     num_converge = (150000//args.bs)*args.epoch
-# else:
-#     num_converge = (50000//args.bs)*args.epoch
-    
-# scheduler = lr_scheduler.CosineAnnealingLR(opt, T_max=num_converge, eta_min=0,last_epoch=-1)
-
-# Loss
-contractive_loss = Similarity_Loss()
-criterion = TotalCodingRate(eps=args.eps)
-
 
 ##############
 ## Training ##
 ##############
 def main():
+    assert num_patches==2, 'SimSiam can only have 2 views from each samples'
+
     for exp_idx, exp_trainset in enumerate(exps_trainset):
         if args.data == "imagenet100" or args.data == "imagenet":
             dataloader = DataLoader(exp_trainset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
@@ -168,23 +126,22 @@ def main():
                     data, label = step_data
                 else:
                     data, label, _ = step_data
+                    
 
                 net.zero_grad()
                 opt.zero_grad()
             
                 data = torch.cat(data, dim=0) 
                 data = data.cuda()
-                z_proj, _ = net(data)
+                feature, z_proj, p_pred = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
-                z_avg = chunk_avg(z_proj, num_patches)
+                p_list = p_pred.chunk(num_patches, dim=0)
+
+                z1, z2 = z_list[0], z_list[1]
+                p1, p2 = p_list[0], p_list[1]         
                 
-                
-                #Contractive Loss
-                loss_contract, _ = contractive_loss(z_list, z_avg)
-                loss_TCR = cal_TCR(z_proj, criterion, num_patches)
-                
-                loss = args.patch_sim*loss_contract + args.tcr*loss_TCR
+                loss = -(criterion(p1, z2).mean() + criterion(p2, z1).mean()) * 0.5                
             
                 loss.backward()
                 opt.step()
@@ -197,7 +154,7 @@ def main():
             torch.save(net.state_dict(), f'{model_dir}exp{exp_idx}_ep{epoch}.pt')
             
         
-            print("At epoch:", epoch, "loss similarity is", loss_contract.item(), ",loss TCR is:", (loss_TCR).item(), "and learning rate is:", opt.param_groups[0]['lr'])
+            print("At epoch:", epoch, "loss is", loss.item(), "and learning rate is:", opt.param_groups[0]['lr'])
        
                 
 

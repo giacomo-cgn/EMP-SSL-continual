@@ -22,6 +22,8 @@ from func import WeightedKNNClassifier
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda.amp import GradScaler, autocast
 
+import copy
+
 ######################
 ## Parsing Argument ##
 ######################
@@ -44,7 +46,7 @@ parser.add_argument('--eps', type=float, default=0.2,
                     help='eps for TCR (default: 0.2)') 
 parser.add_argument('--msg', type=str, default="NONE",
                     help='additional message for description (default: NONE)')     
-parser.add_argument('--dir', type=str, default="EMP-SSL-Training",
+parser.add_argument('--dir', type=str, default="EMP-AEP",
                     help='directory name (default: EMP-SSL-Training)')     
 parser.add_argument('--data', type=str, default="cifar10",
                     help='data (default: cifar10)')          
@@ -53,7 +55,8 @@ parser.add_argument('--epoch', type=int, default=30,
 parser.add_argument('--num_exps', type=int, default=20,
                     help='number of CL experiences (default: 20)')
 
-parser.add_argument('--semantic_order', help='Use semantic ordering of targets based on coarse labels', action='store_true')
+parser.add_argument('--omega', type=float, default=1.0,
+                    help='coefficient of alignment omega (default: 1.0)')
 
 args = parser.parse_args()
 
@@ -121,8 +124,7 @@ if args.data == "imagenet100" or args.data == "imagenet":
     dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
 
 else:
-    exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True,
-                                                num_patch = num_patches, targets_semantic_order=args.semantic_order)
+    exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True, num_patch = num_patches)
     dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
 
 
@@ -134,8 +136,19 @@ net = encoderEMP(arch = args.arch)
 net = nn.DataParallel(net)
 net.cuda()
 
+net_momentum = copy.deepcopy(net)
+net_momentum.requires_grad_(False)
+net_momentum.cuda()
 
-opt = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
+z_dim = 1024
+aligner_dim = 512
+alignment_head = nn.Sequential(nn.Linear(z_dim, aligner_dim, bias=False),
+                                                nn.BatchNorm1d(aligner_dim),
+                                                nn.ReLU(inplace=True),
+                                                nn.Linear(aligner_dim, z_dim)).cuda()
+alignment_criterion = nn.CosineSimilarity()
+
+opt = optim.SGD(list(net.parameters()) + list(alignment_head.parameters()), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
 opt = LARSWrapper(opt,eta=0.005,clip=True,exclude_bias_n_norm=True,)
 
 # scaler = GradScaler()
@@ -170,11 +183,15 @@ def main():
                     data, label, _ = step_data
 
                 net.zero_grad()
+                alignment_head.zero_grad()
                 opt.zero_grad()
             
                 data = torch.cat(data, dim=0) 
                 data = data.cuda()
                 z_proj, _ = net(data)
+
+                with torch.no_grad():
+                    z_proj_momentum, _ = net_momentum(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
                 z_avg = chunk_avg(z_proj, num_patches)
@@ -185,6 +202,11 @@ def main():
                 loss_TCR = cal_TCR(z_proj, criterion, num_patches)
                 
                 loss = args.patch_sim*loss_contract + args.tcr*loss_TCR
+
+                aligned_z = alignment_head(z_proj)
+                alignment_loss = alignment_criterion(aligned_z, z_proj_momentum.detach()).mean()
+
+                loss += args.omega * alignment_loss
             
                 loss.backward()
                 opt.step()
