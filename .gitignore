@@ -2,3 +2,4 @@ logs/
 __pycache__/
 data/
 run_scripts.sh
+old_scripts/

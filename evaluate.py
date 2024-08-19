@@ -12,6 +12,23 @@ from tqdm import tqdm
 import torch
 import numpy as np
 from func import WeightedKNNClassifier, linear
+import os
+
+import sys
+
+class Logger(object):
+    def __init__(self, file_path):
+        self.terminal = sys.stdout  # Save the original stdout (console)
+        self.log = open(file_path, 'w')  # Open the log file
+
+    def write(self, message):
+        self.terminal.write(message)  # Print to the console
+        self.log.write(message)  # Write to the log file
+
+    def flush(self):
+        # This flush method is needed for Python's compatibility with certain environments (like Jupyter notebooks)
+        self.terminal.flush()
+        self.log.flush()
 
 ######################
 ## Parsing Argument ##
@@ -44,6 +61,24 @@ parser.add_argument('--probing_ts_augs', help='apply augmentations for samples u
 
             
 args = parser.parse_args()
+
+# Save dir
+parent_dir = os.path.dirname(os.path.dirname(args.model_path))
+save_folder_name = f'{args.data}_testpatches{args.test_patches}'
+if args.probing_tr_augs:
+    save_folder_name += '_traug'
+if args.probing_ts_augs:
+    save_folder_name += '_tsaug'
+save_dir = os.path.join(parent_dir, os.path.join('eval', save_folder_name))
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
+# Save all args in config_eval.txt file
+with open(os.path.join(save_dir, 'config_eval.txt'), 'a') as f:
+    f.write(str(args))
+
+# Set up logger
+sys.stdout = Logger(os.path.join(save_dir, 'log.txt'))
 
 
 ######################
@@ -177,6 +212,10 @@ net.load_state_dict(save_dict,strict=False)
 net.cuda()
 net.eval()
 test(net, memory_loader, test_loader)
+
+# Reset logger
+sys.stdout = sys.__stdout__
+
 
 
 
