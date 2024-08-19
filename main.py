@@ -52,6 +52,8 @@ parser.add_argument('--epoch', type=int, default=30,
                     help='max number of epochs to finish (default: 30)')
 parser.add_argument('--num_exps', type=int, default=20,
                     help='number of CL experiences (default: 20)')
+parser.add_argument('--gpu_idx', type=int, default=0,
+                    help='GPU index (default: 0)')
 
 parser.add_argument('--semantic_order', help='Use semantic ordering of targets based on coarse labels', action='store_true')
 
@@ -67,6 +69,19 @@ if not os.path.exists(dir_name):
     os.makedirs(dir_name)
     with open(f"{dir_name}/config.txt", "w") as f:
         f.write(str(args))
+
+# Device
+if torch.cuda.is_available():       
+    print(f'There are {torch.cuda.device_count()} GPU(s) available.')
+    if args.gpu_idx < torch.cuda.device_count():
+        device = torch.device(f"cuda:{args.gpu_idx}")
+    else:
+        device = torch.device("cuda")
+    print('Device name:', torch.cuda.get_device_name(0))
+
+else:
+    print('No GPU available, using the CPU instead.')
+    device = torch.device("cpu")
 
 
 
@@ -124,15 +139,11 @@ else:
     exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True,
                                                 num_patch = num_patches, targets_semantic_order=args.semantic_order)
     dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
-
-
-use_cuda = True
-device = torch.device("cuda" if use_cuda else "cpu")
     
     
 net = encoderEMP(arch = args.arch)
 net = nn.DataParallel(net)
-net.cuda()
+net.to(device)
 
 
 opt = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
@@ -173,7 +184,7 @@ def main():
                 opt.zero_grad()
             
                 data = torch.cat(data, dim=0) 
-                data = data.cuda()
+                data = data.to(device)
                 z_proj, _ = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
