@@ -4,7 +4,7 @@
 import argparse
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from model.model import encoderEMP, encoderSimSiam
+from model.model import encoder
 from dataset.datasets import load_dataset
 import numpy as np
 import torch.nn.functional as F
@@ -52,23 +52,12 @@ parser.add_argument('--knn', help='evaluate using kNN measuring cosine similarit
 parser.add_argument('--model_path', type=str, default="",
                     help='model directory for eval')
 
-parser.add_argument('--model', help="model name for recovering encoder ('emp' or 'simsiam')")
-
-parser.add_argument('--probing_tr_augs', help='apply augmentations for samples used to train the probe', action='store_true')
-
-parser.add_argument('--probing_ts_augs', help='apply augmentations for samples used to test the probe', action='store_true')
-
-
             
 args = parser.parse_args()
 
 # Save dir
 parent_dir = os.path.dirname(os.path.dirname(args.model_path))
 save_folder_name = f'{args.data}_testpatches{args.test_patches}'
-if args.probing_tr_augs:
-    save_folder_name += '_traug'
-if args.probing_ts_augs:
-    save_folder_name += '_tsaug'
 save_dir = os.path.join(parent_dir, os.path.join('eval', save_folder_name))
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
@@ -112,7 +101,7 @@ def test(net, train_loader, test_loader):
 
             x = torch.cat(x, dim = 0)
             
-            z_proj, z_pre = net(x)
+            z_proj, z_pre = net(x, is_test=True)
 
             z_pre = chunk_avg(z_pre, test_patches)
             z_pre = z_pre.detach().cpu()
@@ -128,7 +117,7 @@ def test(net, train_loader, test_loader):
         for x, y in tqdm(test_loader):
             x = torch.cat(x, dim = 0)
             
-            z_proj, z_pre = net(x)
+            z_proj, z_pre = net(x, is_test=True)
 
             z_pre = chunk_avg(z_pre, test_patches)
             z_pre = z_pre.detach().cpu()
@@ -177,32 +166,25 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 #Get Dataset
 if args.data == "imagenet100" or args.data == "imagenet":
         
-    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches, model=args.model, use_probing_tr_augs=args.probing_tr_augs)
+    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches, model=args.model)
     memory_loader = DataLoader(memory_dataset, batch_size=50, shuffle=True, drop_last=True,num_workers=8)
 
-    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches, model=args.model, use_probing_ts_augs=args.probing_ts_augs)
+    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches, model=args.model)
     test_loader = DataLoader(test_data, batch_size=50, shuffle=True, num_workers=8)
 
 else:
-    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches, use_probing_tr_augs=args.probing_tr_augs)
+    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches)
     # Get a random subset of length 2000 of memory dataset
     # subset_memory_indices = torch.randperm(len(memory_dataset))[:2000]
     # memory_dataset = torch.utils.data.Subset(memory_dataset, subset_memory_indices)
     memory_loader = DataLoader(memory_dataset, batch_size=50, shuffle=True, drop_last=True,num_workers=8)
 
-    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches, use_probing_ts_augs=args.probing_ts_augs)
+    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches)
     test_loader = DataLoader(test_data, batch_size=50, shuffle=True, num_workers=8)
 
 # Load Model and Checkpoint
 use_cuda = True
 device = torch.device("cuda" if use_cuda else "cpu")
-
-if args.model == "emp":
-    encoder = encoderEMP
-elif args.model == "simsiam":
-    encoder = encoderSimSiam
-else:
-    raise ValueError(f'Unrecognized model name "{args.model}"')
 net = encoder(arch = args.arch)
 net = nn.DataParallel(net)
 save_dict = torch.load(args.model_path)

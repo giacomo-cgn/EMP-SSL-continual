@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import os
 from torch.utils.data import DataLoader
-from model.model import encoderEMP
+from model.model import encoder
 from dataset.datasets import load_dataset
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,6 +21,7 @@ from lars import LARS, LARSWrapper
 from func import WeightedKNNClassifier
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda.amp import GradScaler, autocast
+import time
 
 ######################
 ## Parsing Argument ##
@@ -55,19 +56,20 @@ parser.add_argument('--num_exps', type=int, default=20,
 parser.add_argument('--gpu_idx', type=int, default=0,
                     help='GPU index (default: 0)')
 
-parser.add_argument('--semantic_order', help='Use semantic ordering of targets based on coarse labels', action='store_true')
-
 args = parser.parse_args()
 
 print(args)
 
 num_patches = args.num_patches
-dir_name = f"./logs/{args.dir}/patchsim{args.patch_sim}_numpatch{args.num_patches}_bs{args.bs}_lr{args.lr}_numexps{args.num_exps}_{args.msg}"
 
-# Write args to config.txt file
+date = time.localtime()
+date = f"{date.tm_mday}-{date.tm_mon}-{date.tm_year}_{date.tm_hour}:{date.tm_min}"
+dir_name = f"./logs/{args.dir}/{date}_numpatch{args.num_patches}_bs{args.bs}_lr{args.lr}_numexps{args.num_exps}_{args.msg}"
+
+# save hyperparameters
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
-    with open(f"{dir_name}/config.txt", "w") as f:
+    with open(os.path.join(dir_name, "hyperparameters.txt"), "w") as f:
         f.write(str(args))
 
 # Device
@@ -131,19 +133,23 @@ def cal_TCR(z, criterion, num_patches):
 ######################
 torch.multiprocessing.set_sharing_strategy('file_system')
 
+use_cuda = True
+device = torch.device("cuda" if use_cuda else "cpu")
+
 if args.data == "imagenet100" or args.data == "imagenet":
     exps_trainset, train_dataset = load_dataset("imagenet", num_exps=args.num_exps, train=True, num_patch = num_patches)
     dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
 
 else:
     exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True,
-                                                num_patch = num_patches, targets_semantic_order=args.semantic_order)
+                                                num_patch = num_patches)
     dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
     
     
-net = encoderEMP(arch = args.arch)
-# net = nn.DataParallel(net)
-net.to(device)
+    
+net = encoder(arch = args.arch)
+net = nn.DataParallel(net)
+net.cuda()
 
 
 opt = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
@@ -179,13 +185,13 @@ def main():
                     data, label = step_data
                 else:
                     data, label, _ = step_data
-
+                    
                 net.zero_grad()
                 opt.zero_grad()
             
                 data = torch.cat(data, dim=0) 
-                data = data.to(device)
-                z_proj, _ = net(data)
+                data = data.cuda()
+                z_proj = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
                 z_avg = chunk_avg(z_proj, num_patches)
@@ -193,7 +199,9 @@ def main():
                 
                 #Contractive Loss
                 loss_contract, _ = contractive_loss(z_list, z_avg)
+                print("loss contract:", loss_contract)
                 loss_TCR = cal_TCR(z_proj, criterion, num_patches)
+                print("loss TCR:", loss_TCR)
                 
                 loss = args.patch_sim*loss_contract + args.tcr*loss_TCR
             
@@ -208,7 +216,7 @@ def main():
             torch.save(net.state_dict(), f'{model_dir}exp{exp_idx}_ep{epoch}.pt')
             
         
-            print("At epoch:", epoch, "loss similarity is", loss_contract.item(), ",loss TCR is:", (loss_TCR).item(), "and learning rate is:", opt.param_groups[0]['lr'])
+            print("At experience", exp_idx, "in epoch:", epoch, "loss similarity is", loss_contract.item(), ",loss TCR is:", (loss_TCR).item(), "and learning rate is:", opt.param_groups[0]['lr'])
        
                 
 

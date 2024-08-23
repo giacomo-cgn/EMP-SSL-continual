@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import numpy as np
 import torchvision.transforms as transforms
 from PIL import Image, ImageFilter, ImageOps
-import random
 
 
 def load_transforms(name):
@@ -135,67 +134,5 @@ class ContrastiveLearningViewGenerator(object):
             normalize
         ])
         augmented_x = [aug_transform(x) for i in range(self.num_patch)]
-
-        # original_x_transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762))
-        # ])
-        # augmented_x = [original_x_transform(x)] + augmented_x
      
         return augmented_x
-    
-class EvalTransforms(object):
-    def __init__(self):
-        pass
-      
-    def __call__(self, x):
-    
-    
-        normalize = transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762))
-        # normalize = transforms.Normalize([0.5,0.5,0.5], [0.5,0.5,0.5])
-
-        
-        aug_transform = transforms.Compose([
-            transforms.ToTensor(),  
-            normalize
-        ])
-        augmented_x = [aug_transform(x)]
-     
-        return augmented_x
-    
-
-class SimSiamViewGenerator(object):
-    def __init__(self):
-        pass
-          
-    def __call__(self, x):
-
-        normalize = transforms.Normalize([0.5,0.5,0.5], [0.5,0.5,0.5])
-
-        # MoCo v2's aug: similar to SimCLR https://arxiv.org/abs/2002.05709
-        aug_transform = transforms.Compose([
-            transforms.RandomResizedCrop(32, scale=(0.2, 1.)),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
-            ], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomApply([SimSiamGaussianBlur([.1, 2.])], p=0.5),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize
-        ])
-
-        augmented_x = [aug_transform(x) for i in range(2)]
-        return augmented_x
-
-class SimSiamGaussianBlur(object):
-    """Gaussian blur augmentation in SimCLR https://arxiv.org/abs/2002.05709"""
-
-    def __init__(self, sigma=[.1, 2.]):
-        self.sigma = sigma
-
-    def __call__(self, x):
-        sigma = random.uniform(self.sigma[0], self.sigma[1])
-        x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
-        return x
-    
