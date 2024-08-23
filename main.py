@@ -144,7 +144,6 @@ else:
     
     
 net = encoder(arch = args.arch)
-net = nn.DataParallel(net)
 net.to(device)
 
 
