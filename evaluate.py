@@ -51,6 +51,8 @@ parser.add_argument('--linear', type=bool, default=True,
 parser.add_argument('--knn', help='evaluate using kNN measuring cosine similarity', action='store_true')
 parser.add_argument('--model_path', type=str, default="",
                     help='model directory for eval')
+parser.add_argument('--gpu_idx', type=int, default=0,
+                    help='GPU index (default: 0)')
 
             
 args = parser.parse_args()
@@ -68,6 +70,19 @@ with open(os.path.join(save_dir, 'config_eval.txt'), 'a') as f:
 
 # Set up logger
 sys.stdout = Logger(os.path.join(save_dir, 'log.txt'))
+
+# Device
+if torch.cuda.is_available():       
+    print(f'There are {torch.cuda.device_count()} GPU(s) available.')
+    if args.gpu_idx < torch.cuda.device_count():
+        device = torch.device(f"cuda:{args.gpu_idx}")
+    else:
+        device = torch.device("cuda")
+    print('Device name:', torch.cuda.get_device_name(0))
+
+else:
+    print('No GPU available, using the CPU instead.')
+    device = torch.device("cpu")
 
 
 ######################
@@ -191,7 +206,7 @@ save_dict = torch.load(args.model_path)
 if 'net' in save_dict.keys():
     save_dict = save_dict['net']
 net.load_state_dict(save_dict,strict=False)
-net.cuda()
+net.to(device)
 net.eval()
 test(net, memory_loader, test_loader)
 

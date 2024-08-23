@@ -131,10 +131,6 @@ def cal_TCR(z, criterion, num_patches):
 ######################
 ## Prepare Training ##
 ######################
-torch.multiprocessing.set_sharing_strategy('file_system')
-
-use_cuda = True
-device = torch.device("cuda" if use_cuda else "cpu")
 
 if args.data == "imagenet100" or args.data == "imagenet":
     exps_trainset, train_dataset = load_dataset("imagenet", num_exps=args.num_exps, train=True, num_patch = num_patches)
@@ -149,7 +145,7 @@ else:
     
 net = encoder(arch = args.arch)
 net = nn.DataParallel(net)
-net.cuda()
+net.to(device)
 
 
 opt = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4,nesterov=True)
@@ -190,7 +186,7 @@ def main():
                 opt.zero_grad()
             
                 data = torch.cat(data, dim=0) 
-                data = data.cuda()
+                data = data.to(device)
                 z_proj = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
