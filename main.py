@@ -21,7 +21,7 @@ from lars import LARS, LARSWrapper
 from func import WeightedKNNClassifier
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda.amp import GradScaler, autocast
-import time
+import datetime
 
 ######################
 ## Parsing Argument ##
@@ -50,28 +50,25 @@ parser.add_argument('--dir', type=str, default="EMP-SSL-Training",
 parser.add_argument('--data', type=str, default="cifar10",
                     help='data (default: cifar10)')          
 parser.add_argument('--epoch', type=int, default=30,
-                    help='max number of epochs to finish (default: 30)')
-parser.add_argument('--num_exps', type=int, default=20,
-                    help='number of CL experiences (default: 20)')
+                    help='max number of epochs to finish (default: 30)') 
 parser.add_argument('--gpu_idx', type=int, default=0,
                     help='GPU index (default: 0)')
+parser.add_argument('--num_exps', type=int, default=1,
+                    help='number of CL experiences (default: 1)')
 
 args = parser.parse_args()
 
 print(args)
-
 num_patches = args.num_patches
 
-date = time.localtime()
-date = f"{date.tm_mday}-{date.tm_mon}-{date.tm_year}_{date.tm_hour}:{date.tm_min}"
-dir_name = f"./logs/{args.dir}/{date}_numpatch{args.num_patches}_bs{args.bs}_lr{args.lr}_numexps{args.num_exps}_{args.msg}"
+str_now = datetime.datetime.now().strftime("%d-%m-%y_%H:%M")
+dir_name = f"./logs/{args.dir}/{str_now}_numpatch{args.num_patches}_bs{args.bs}_lr{args.lr}_numexps{args.num_exps}_{args.msg}"
 
 # save hyperparameters
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
     with open(os.path.join(dir_name, "hyperparameters.txt"), "w") as f:
         f.write(str(args))
-
 # Device
 if torch.cuda.is_available():       
     print(f'There are {torch.cuda.device_count()} GPU(s) available.')
@@ -131,19 +128,21 @@ def cal_TCR(z, criterion, num_patches):
 ######################
 ## Prepare Training ##
 ######################
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 if args.data == "imagenet100" or args.data == "imagenet":
-    exps_trainset, train_dataset = load_dataset("imagenet", num_exps=args.num_exps, train=True, num_patch = num_patches)
-    dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
+    exps_trainset, _ = load_dataset("imagenet", train=True, num_patch = num_patches, num_exps=args.num_exps)
 
 else:
-    exps_trainset, train_dataset = load_dataset(args.data, num_exps=args.num_exps, train=True,
-                                                num_patch = num_patches)
-    dataloader = DataLoader(train_dataset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
-    
+    exps_trainset, _ = load_dataset(args.data, train=True, num_patch = num_patches, num_exps=args.num_exps)
+
+
+# use_cuda = True
+# device = torch.device("cuda" if use_cuda else "cpu")
     
     
 net = encoder(arch = args.arch)
+# net = nn.DataParallel(net)
 net.to(device)
 
 
@@ -168,19 +167,15 @@ criterion = TotalCodingRate(eps=args.eps)
 ##############
 def main():
     for exp_idx, exp_trainset in enumerate(exps_trainset):
-        if args.data == "imagenet100" or args.data == "imagenet":
-            dataloader = DataLoader(exp_trainset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
-        else:
-            dataloader = DataLoader(exp_trainset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=16)
-
+        dataloader = DataLoader(exp_trainset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
         for epoch in range(args.epoch):            
-            for step, step_data in enumerate(tqdm(dataloader)):
-
+            for step, step_data in tqdm(enumerate(dataloader)):
                 if args.num_exps == 1:
                     data, label = step_data
                 else:
                     data, label, _ = step_data
-                    
+
+
                 net.zero_grad()
                 opt.zero_grad()
             
@@ -194,9 +189,7 @@ def main():
                 
                 #Contractive Loss
                 loss_contract, _ = contractive_loss(z_list, z_avg)
-                print("loss contract:", loss_contract)
                 loss_TCR = cal_TCR(z_proj, criterion, num_patches)
-                print("loss TCR:", loss_TCR)
                 
                 loss = args.patch_sim*loss_contract + args.tcr*loss_TCR
             
@@ -211,7 +204,7 @@ def main():
             torch.save(net.state_dict(), f'{model_dir}exp{exp_idx}_ep{epoch}.pt')
             
         
-            print("At experience", exp_idx, "in epoch:", epoch, "loss similarity is", loss_contract.item(), ",loss TCR is:", (loss_TCR).item(), "and learning rate is:", opt.param_groups[0]['lr'])
+            print("At exp:", exp_idx, ", epoch:", epoch, "loss similarity is", loss_contract.item(), ",loss TCR is:", (loss_TCR).item(), "and learning rate is:", opt.param_groups[0]['lr'])
        
                 
 

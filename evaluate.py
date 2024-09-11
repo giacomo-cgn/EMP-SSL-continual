@@ -13,7 +13,6 @@ import torch
 import numpy as np
 from func import WeightedKNNClassifier, linear
 import os
-
 import sys
 
 class Logger(object):
@@ -52,10 +51,11 @@ parser.add_argument('--knn', help='evaluate using kNN measuring cosine similarit
 parser.add_argument('--model_path', type=str, default="",
                     help='model directory for eval')
 parser.add_argument('--gpu_idx', type=int, default=0,
-                    help='GPU index (default: 0)')
+                    help='GPU index (default: 0)') 
 
             
 args = parser.parse_args()
+
 
 # Save dir
 parent_dir = os.path.dirname(os.path.dirname(args.model_path))
@@ -71,6 +71,7 @@ with open(os.path.join(save_dir, 'config_eval.txt'), 'a') as f:
 # Set up logger
 sys.stdout = Logger(os.path.join(save_dir, 'log.txt'))
 
+
 # Device
 if torch.cuda.is_available():       
     print(f'There are {torch.cuda.device_count()} GPU(s) available.')
@@ -83,6 +84,14 @@ if torch.cuda.is_available():
 else:
     print('No GPU available, using the CPU instead.')
     device = torch.device("cpu")
+
+
+
+
+
+
+
+
 
 
 ######################
@@ -114,7 +123,7 @@ def test(net, train_loader, test_loader):
     with torch.no_grad():
         for x, y in tqdm(train_loader):
 
-            x = torch.cat(x, dim = 0)
+            x = torch.cat(x, dim = 0).to(device)
             
             z_proj, z_pre = net(x, is_test=True)
 
@@ -130,7 +139,7 @@ def test(net, train_loader, test_loader):
             train_y_list.append(y)
                 
         for x, y in tqdm(test_loader):
-            x = torch.cat(x, dim = 0)
+            x = torch.cat(x, dim = 0).to(device)
             
             z_proj, z_pre = net(x, is_test=True)
 
@@ -181,10 +190,10 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 #Get Dataset
 if args.data == "imagenet100" or args.data == "imagenet":
         
-    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches, model=args.model)
+    _, memory_dataset = load_dataset(args.data, train=True, num_patch = test_patches)
     memory_loader = DataLoader(memory_dataset, batch_size=50, shuffle=True, drop_last=True,num_workers=8)
 
-    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches, model=args.model)
+    _, test_data = load_dataset(args.data, train=False, num_patch = test_patches)
     test_loader = DataLoader(test_data, batch_size=50, shuffle=True, num_workers=8)
 
 else:
@@ -199,12 +208,10 @@ else:
 
 # Load Model and Checkpoint
 use_cuda = True
-device = torch.device("cuda" if use_cuda else "cpu")
+# device = torch.device("cuda" if use_cuda else "cpu")
 net = encoder(arch = args.arch)
-net = nn.DataParallel(net)
+# net = nn.DataParallel(net)
 save_dict = torch.load(args.model_path)
-if 'net' in save_dict.keys():
-    save_dict = save_dict['net']
 net.load_state_dict(save_dict,strict=False)
 net.to(device)
 net.eval()
@@ -212,7 +219,4 @@ test(net, memory_loader, test_loader)
 
 # Reset logger
 sys.stdout = sys.__stdout__
-
-
-
 

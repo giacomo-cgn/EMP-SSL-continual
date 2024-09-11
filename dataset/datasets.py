@@ -4,7 +4,7 @@ import torchvision
 
 from avalanche.benchmarks.classic import SplitCIFAR100, SplitCIFAR10, SplitImageNet
 
-def load_dataset(data_name, num_exps=1, train=True, num_patch = 4, path="./data/", seed=42):
+def load_dataset(data_name, num_exps=1, seed=42, train=True, num_patch = 4, path="./data/"):
     """Loads a dataset for training and testing. If augmentloader is used, transform should be None.
     
     Parameters:
@@ -46,7 +46,7 @@ def load_dataset(data_name, num_exps=1, train=True, num_patch = 4, path="./data/
     else:
         raise NameError("{} not found in trainset loader".format(_name))
     
-    
+
     if num_exps == 1:
         exps_trainset = [trainset]
         
@@ -74,6 +74,7 @@ def load_dataset(data_name, num_exps=1, train=True, num_patch = 4, path="./data/
             exps_trainset.append(exp.dataset)
         
     return exps_trainset, trainset
+
 
 def sparse2coarse(targets):
     """CIFAR100 Coarse Labels. """
