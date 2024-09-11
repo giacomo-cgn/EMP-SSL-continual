@@ -51,7 +51,9 @@ parser.add_argument('--knn', help='evaluate using kNN measuring cosine similarit
 parser.add_argument('--model_path', type=str, default="",
                     help='model directory for eval')
 parser.add_argument('--gpu_idx', type=int, default=0,
-                    help='GPU index (default: 0)') 
+                    help='GPU index (default: 0)')
+parser.add_argument('--msg', type=str, default="",
+                    help='additional message for description (default: "")') 
 
             
 args = parser.parse_args()
@@ -59,7 +61,7 @@ args = parser.parse_args()
 
 # Save dir
 parent_dir = os.path.dirname(os.path.dirname(args.model_path))
-save_folder_name = f'{args.data}_testpatches{args.test_patches}'
+save_folder_name = f'{args.data}_testpatches{args.test_patches}_{args.msg}'
 save_dir = os.path.join(parent_dir, os.path.join('eval', save_folder_name))
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
