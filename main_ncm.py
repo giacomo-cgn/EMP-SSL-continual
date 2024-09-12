@@ -196,7 +196,7 @@ def main():
             
                 data = torch.cat(data, dim=0) 
                 data = data.to(device)
-                z_proj = net(data)
+                z_proj, z_pre, z_feat = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
                 z_avg = chunk_avg(z_proj, num_patches)
@@ -214,7 +214,8 @@ def main():
 
                 # Update NCM classifier
                 with torch.no_grad():
-                    ncm_clf.update_class_means_dict(z_avg, label)
+                    z_pre_avg = chunk_avg(z_pre, num_patches)
+                    ncm_clf.update_class_means_dict(z_pre_avg.detach(), label)
 
 
             print("At exp:", exp_idx, ", epoch:", epoch, "loss similarity is", loss_contract.item(), ",loss TCR is:", (loss_TCR).item(), "and learning rate is:", opt.param_groups[0]['lr'])
@@ -278,9 +279,9 @@ def test(net, ncm_clf, exp_idx, epoch):
 
             x = torch.cat(x, dim = 0).to(device)
 
-            z_proj, z_pre = net(x, is_test=True)
+            z_proj, z_pre, z_feat = net(x)
 
-            z_proj = chunk_avg(z_proj, args.test_patches)
+            z_proj = chunk_avg(z_pre, args.test_patches)
             z_proj = z_proj.detach().cpu()
            
             # NCM classifier

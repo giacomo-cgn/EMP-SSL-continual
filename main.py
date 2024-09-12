@@ -181,7 +181,7 @@ def main():
             
                 data = torch.cat(data, dim=0) 
                 data = data.to(device)
-                z_proj = net(data)
+                z_proj, _, _ = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
                 z_avg = chunk_avg(z_proj, num_patches)

@@ -127,7 +127,7 @@ def test(net, train_loader, test_loader):
 
             x = torch.cat(x, dim = 0).to(device)
             
-            z_proj, z_pre = net(x, is_test=True)
+            z_proj, z_pre, z_feat = net(x)
 
             z_pre = chunk_avg(z_pre, test_patches)
             z_pre = z_pre.detach().cpu()
@@ -143,7 +143,7 @@ def test(net, train_loader, test_loader):
         for x, y in tqdm(test_loader):
             x = torch.cat(x, dim = 0).to(device)
             
-            z_proj, z_pre = net(x, is_test=True)
+            z_proj, z_pre, z_feat = net(x)
 
             z_pre = chunk_avg(z_pre, test_patches)
             z_pre = z_pre.detach().cpu()

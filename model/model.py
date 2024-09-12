@@ -43,16 +43,18 @@ class encoder(nn.Module):
         self.projection = nn.Sequential(nn.Linear(hidden_dim,hidden_dim), nn.BatchNorm1d(hidden_dim), nn.ReLU(), nn.Linear(hidden_dim,z_dim))
         
           
-     def forward(self, x, is_test = False):
+     def forward(self, x):
          
         feature = self.backbone(x)
-        feature = self.pre_feature(feature)
-        z = F.normalize(self.projection(feature),p=self.norm_p)
+        prefeature = self.pre_feature(feature)
+        z = F.normalize(self.projection(prefeature),p=self.norm_p)
 
-        if is_test:
-            return z, feature
-        else:
-            return z
+        return z, prefeature, feature
+
+        # if is_test:
+        #     return z, feature
+        # else:
+        #     return z
 
    
     
