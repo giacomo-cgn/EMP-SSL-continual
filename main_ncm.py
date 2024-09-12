@@ -75,6 +75,12 @@ if not os.path.exists(dir_name):
     os.makedirs(dir_name)
     with open(os.path.join(dir_name, "hyperparameters.txt"), "w") as f:
         f.write(str(args))
+
+# Results dir
+results_dir = os.path.join(dir_name, "results")
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+
 # Device
 if torch.cuda.is_available():       
     print(f'There are {torch.cuda.device_count()} GPU(s) available.')
@@ -286,7 +292,7 @@ def test(net, ncm_clf, exp_idx, epoch):
             num_total += x.size(0)
 
     test_accuracy = 100. * num_correct / num_total
-    with open(f'./results/patches{args.test_patches}.txt', 'a') as f:
+    with open(os.path.join(results_dir, f'{args.test_patches}.txt'), 'a') as f:
                 f.write(f'Exp {exp_idx}, epoch {epoch}: {test_accuracy:.2f}\n')
     return test_accuracy   
                 
