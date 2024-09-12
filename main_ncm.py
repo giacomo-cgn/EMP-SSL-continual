@@ -241,8 +241,8 @@ def main():
         ncm_clf.vectorize_means_dict()
         print(f'Num prototypes in NCM: {len(ncm_clf.class_means_dict.keys())}')
 
-        for key, val in ncm_clf.class_means_dict.items():
-            print(f'Prototype {key}: {val.shape}')
+        # for key, val in ncm_clf.class_means_dict.items():
+        #     print(f'Prototype {key}: {val.shape}')
 
         print('clf_means shape:', ncm_clf.class_means.shape)
 
@@ -272,13 +272,13 @@ def test(net, ncm_clf, exp_idx, epoch):
 
             x = torch.cat(x, dim = 0).to(device)
 
-            z_proj, z_pre = net(x)
+            z_proj, z_pre = net(x, is_test=True)
 
-            z_pre = chunk_avg(z_pre, args.test_patches)
-            z_pre = z_pre.detach().cpu()
+            z_proj = chunk_avg(z_proj, args.test_patches)
+            z_proj = z_proj.detach().cpu()
            
             # NCM classifier
-            distances_logits = ncm_clf(z_pre)
+            distances_logits = ncm_clf(z_proj)
             _, predicted = torch.max(distances_logits, 1)
 
             correct_pred = (predicted == y).sum().item()
