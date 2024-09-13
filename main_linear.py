@@ -165,7 +165,8 @@ elif args.data == "imagenet100" or "cifar100":
     num_classes = 100
 elif args.data == "imagenet":
     num_classes = 1000
-LL = nn.Linear(4096, num_classes)
+    
+LL = nn.Linear(4096, num_classes).to(device)
 opt_linear = torch.optim.SGD(LL.parameters(), lr=args.lr_linear, momentum=0.9, weight_decay=5e-5)
 linear_criterion = torch.nn.CrossEntropyLoss()
 
@@ -209,6 +210,7 @@ def main():
             
                 data = torch.cat(data, dim=0) 
                 data = data.to(device)
+                label = label.to(device)
                 z_proj, z_pre, z_feat = net(data)
                 
                 z_list = z_proj.chunk(num_patches, dim=0)
