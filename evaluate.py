@@ -214,6 +214,8 @@ use_cuda = True
 net = encoder(arch = args.arch)
 # net = nn.DataParallel(net)
 save_dict = torch.load(args.model_path)
+if 'net' in save_dict.keys():
+    save_dict = save_dict['net']
 net.load_state_dict(save_dict,strict=False)
 net.to(device)
 net.eval()

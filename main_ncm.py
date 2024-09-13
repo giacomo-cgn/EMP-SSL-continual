@@ -293,7 +293,7 @@ def test(net, ncm_clf, exp_idx, epoch):
             num_total += x.size(0)
 
     test_accuracy = 100. * num_correct / num_total
-    with open(os.path.join(results_dir, f'{args.test_patches}.txt'), 'a') as f:
+    with open(os.path.join(results_dir, f'test_patches{args.test_patches}.txt'), 'a') as f:
                 f.write(f'Exp {exp_idx}, epoch {epoch}: {test_accuracy:.2f}\n')
     return test_accuracy   
                 
