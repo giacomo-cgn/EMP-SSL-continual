@@ -22,7 +22,6 @@ from func import WeightedKNNClassifier
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda.amp import GradScaler, autocast
 import datetime
-from src.ncm import NCMClassifier
 
 ######################
 ## Parsing Argument ##
@@ -56,8 +55,6 @@ parser.add_argument('--gpu_idx', type=int, default=0,
                     help='GPU index (default: 0)')
 parser.add_argument('--num_exps', type=int, default=1,
                     help='number of CL experiences (default: 1)')
-parser.add_argument('--ncm_momentum', type=int, default=0.999,
-                    help='Update momentum value for the NCM classifier (default: 0.999) ')
 parser.add_argument('--test_patches', type=int, default=1,
                     help='number of patches used in testing (default: 128)')
 parser.add_argument('--eval_every', help='evaluate at the end of every epoch and exp', action='store_true')
@@ -192,8 +189,6 @@ criterion = TotalCodingRate(eps=args.eps)
 ## Training ##
 ##############
 def main():
-    # Init online NCM classifier
-    ncm_clf = NCMClassifier(normalize=False, update_momentum=args.ncm_momentum)
 
     for exp_idx, exp_trainset in enumerate(exps_trainset):
         dataloader = DataLoader(exp_trainset, batch_size=args.bs, shuffle=True, drop_last=True,num_workers=8)
@@ -241,7 +236,7 @@ def main():
 
                 
             if args.eval_every:
-                test_accuracy = test(net, ncm_clf, exp_idx, epoch)
+                test_accuracy = test(net, LL, exp_idx, epoch)
                 net.train()
                 print(f'---- Test accuracy at epoch {epoch} of experience {exp_idx} is: {test_accuracy:.2f}')
 
@@ -254,7 +249,7 @@ def main():
             }, f'{model_dir}exp{exp_idx}_ep{epoch}.pt')
 
     if not args.eval_every:
-        test_accuracy = test(net, ncm_clf, exp_idx, epoch)
+        test_accuracy = test(net, LL, exp_idx, epoch)
         net.train()
         print(f'---- Test accuracy at epoch {epoch} of experience {exp_idx} is: {test_accuracy:.2f}')
             
