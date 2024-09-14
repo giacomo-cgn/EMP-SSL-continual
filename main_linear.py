@@ -273,8 +273,10 @@ def test(net, LL, exp_idx, epoch):
         for counter, (x, y) in tqdm(enumerate(test_loader)):
 
             x = torch.cat(x, dim = 0).to(device)
+            y = y.to(device)
 
             z_proj, z_pre, z_feat = net(x)
+            z_pre = chunk_avg(z_pre, args.test_patches)
             logits = LL(z_pre)
 
             top1, top5 = accuracy(logits, y, topk=(1,5))
@@ -292,5 +294,3 @@ def test(net, LL, exp_idx, epoch):
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     main()
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
